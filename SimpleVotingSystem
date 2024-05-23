@@ -1,0 +1,118 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+import "@openzeppelin/contracts/access/AccessControl.sol";
+
+contract SimpleVotingSystem is AccessControl {
+    struct Candidate {
+        uint id;
+        string name;
+        uint voteCount;
+        address payable founder;
+    }
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant FOUNDER_ROLE = keccak256("FOUNDER_ROLE");
+
+    enum WorkflowStatus { REGISTER_CANDIDATES, FOUND_CANDIDATES, VOTE, COMPLETED }
+
+    WorkflowStatus public workflowStatus = WorkflowStatus.REGISTER_CANDIDATES;
+    uint public voteStartTime;
+    uint public completionTime;
+
+    address public owner;
+    mapping(uint => Candidate) public candidates;
+    mapping(address => bool) public voters;
+    uint[] private candidateIds;
+
+    modifier onlyOwnerOrAdmin() {
+        require(hasRole(ADMIN_ROLE, msg.sender) || msg.sender == owner, "Unauthorized");
+        _;
+    }
+
+    modifier onlyFounder() {
+        require(hasRole(FOUNDER_ROLE, msg.sender), "Unauthorized");
+        _;
+    }
+
+    modifier onlyInStatus(WorkflowStatus _status) {
+        require(workflowStatus == _status, "Invalid workflow status");
+        _;
+    }
+
+    modifier onlyAfterVoteStartTime() {
+        require(block.timestamp >= voteStartTime + 1 hours, "Voting is not yet allowed");
+        _;
+    }
+
+    modifier onlyAfterCompletionTime() {
+        require(block.timestamp >= completionTime, "Completion time not reached");
+        _;
+    }
+
+    constructor() {
+        owner = msg.sender;
+        _setupRole(ADMIN_ROLE, msg.sender);
+        _setupRole(FOUNDER_ROLE, msg.sender);
+    }
+
+    function setWorkflowStatus(WorkflowStatus _status) public onlyRole(ADMIN_ROLE) {
+        if (_status == WorkflowStatus.VOTE) {
+            voteStartTime = block.timestamp;
+        } else if (_status == WorkflowStatus.COMPLETED) {
+            completionTime = block.timestamp;
+        }
+        workflowStatus = _status;
+    }
+
+    function addCandidate(string memory _name) public onlyRole(ADMIN_ROLE) onlyInStatus(WorkflowStatus.REGISTER_CANDIDATES) {
+        require(bytes(_name).length > 0, "Candidate name cannot be empty");
+        uint candidateId = candidateIds.length + 1;
+        candidates[candidateId] = Candidate(candidateId, _name, 0, payable(address(0)));
+        candidateIds.push(candidateId);
+    }
+
+    function vote(uint _candidateId) public onlyInStatus(WorkflowStatus.VOTE) onlyAfterVoteStartTime {
+        require(!voters[msg.sender], "You have already voted");
+        require(_candidateId > 0 && _candidateId <= candidateIds.length, "Invalid candidate ID");
+
+        voters[msg.sender] = true;
+        candidates[_candidateId].voteCount += 1;
+    }
+
+    function getTotalVotes(uint _candidateId) public view returns (uint) {
+        require(_candidateId > 0 && _candidateId <= candidateIds.length, "Invalid candidate ID");
+        return candidates[_candidateId].voteCount;
+    }
+
+    function getCandidatesCount() public view returns (uint) {
+        return candidateIds.length;
+    }
+
+    function getCandidate(uint _candidateId) public view returns (Candidate memory) {
+        require(_candidateId > 0 && _candidateId <= candidateIds.length, "Invalid candidate ID");
+        return candidates[_candidateId];
+    }
+
+    function sendFundsToCandidate(uint _candidateId, uint _amount) public onlyFounder {
+        require(_candidateId > 0 && _candidateId <= candidateIds.length, "Invalid candidate ID");
+        require(_amount > 0, "Amount must be greater than 0");
+        Candidate storage candidate = candidates[_candidateId];
+        require(candidate.founder != address(0), "Candidate founder not set");
+
+        candidate.founder.transfer(_amount);
+    }
+
+    function getWinner() public view onlyInStatus(WorkflowStatus.COMPLETED) onlyAfterCompletionTime returns (Candidate memory) {
+        uint maxVotes = 0;
+        uint winnerId;
+        for (uint i = 0; i < candidateIds.length; i++) {
+            uint candidateId = candidateIds[i];
+            if (candidates[candidateId].voteCount > maxVotes) {
+                maxVotes = candidates[candidateId].voteCount;
+                winnerId = candidateId;
+            }
+        }
+        return candidates[winnerId];
+    }
+}

@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "foundry/Foundry.sol";
+import "ds-test/test.sol";
+import "./SimpleVotingSystem.sol";
+
+contract SimpleVotingSystemTest is DSTest {
+    SimpleVotingSystem votingSystem;
+
+    function setUp() public {
+        votingSystem = new SimpleVotingSystem();
+    }
+
+    function testWorkflowStatus() public {
+        assertTrue(votingSystem.workflowStatus() == SimpleVotingSystem.WorkflowStatus.REGISTER_CANDIDATES);
+    }
+
+    function testAddCandidate() public {
+        votingSystem.addCandidate("Candidate 1");
+        assertTrue(votingSystem.getCandidatesCount() == 1);
+    }
+
+    function testVote() public {
+        votingSystem.addCandidate("Candidate 1");
+        votingSystem.addCandidate("Candidate 2");
+        votingSystem.setWorkflowStatus(SimpleVotingSystem.WorkflowStatus.VOTE);
+        votingSystem.vote(1);
+        assertTrue(votingSystem.getTotalVotes(1) == 1);
+    }
+
+    function testGetWinner() public {
+        votingSystem.addCandidate("Candidate 1");
+        votingSystem.addCandidate("Candidate 2");
+        votingSystem.setWorkflowStatus(SimpleVotingSystem.WorkflowStatus.VOTE);
+        votingSystem.vote(1);
+        votingSystem.vote(1);
+        votingSystem.setWorkflowStatus(SimpleVotingSystem.WorkflowStatus.COMPLETED);
+        SimpleVotingSystem.Candidate memory winner = votingSystem.getWinner();
+        assertTrue(winner.id == 1);
+    }
+}
